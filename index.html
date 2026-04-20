@@ -1,0 +1,290 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <title>OverBot Mobile APK</title>
+  <style>
+    :root{
+      --bg:#0f1115; --panel:#171a21; --soft:#202531; --text:#f5f7fb; --muted:#b9c0cd;
+      --accent:#e53935; --border:#2a3140;
+    }
+    *{box-sizing:border-box}
+    body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;background:linear-gradient(180deg,#0d1016,#11151d 35%,#0f1115);color:var(--text)}
+    .wrap{max-width:840px;margin:0 auto;padding:16px 14px 28px}
+    .hero,.card{padding:16px;border:1px solid var(--border);border-radius:22px;background:#171b24}
+    h1{margin:0 0 8px;font-size:28px}
+    .sub,.small,.meta,.footer{color:var(--muted);line-height:1.45}
+    .grid{display:grid;gap:12px;margin-top:14px}
+    .row{display:grid;gap:10px}
+    @media(min-width:680px){ .row.two{grid-template-columns:1fr 1fr} }
+    label{display:block;font-size:13px;color:var(--muted);margin-bottom:6px}
+    input,textarea{width:100%;padding:12px 13px;border-radius:14px;border:1px solid var(--border);background:var(--soft);color:var(--text);outline:none}
+    textarea{min-height:88px;resize:vertical}
+    button{border:0;border-radius:16px;padding:12px 14px;font-weight:700;cursor:pointer;background:var(--accent);color:white}
+    button.secondary{background:#2c3443}
+    button.ghost{background:transparent;border:1px solid var(--border);color:var(--text)}
+    .actions{display:flex;gap:10px;flex-wrap:wrap}
+    .pill,.tag{display:inline-block;padding:6px 10px;border-radius:999px;background:#202735;color:#d8e0ee;font-size:12px;border:1px solid var(--border);margin:4px 6px 0 0}
+    .match{padding:14px;border:1px solid var(--border);border-radius:18px;background:#121720;margin-bottom:10px}
+    .green{background:rgba(39,174,96,.16);color:#8ff0b2}
+    .orange{background:rgba(243,156,18,.16);color:#ffd18a}
+    .red{background:rgba(229,57,53,.16);color:#ffaaa7}
+    a{color:#fff}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="hero">
+      <h1>OverBot Mobile APK 📱⚽</h1>
+      <div class="sub">Mobilny skaner meczów pod wysokie overy. Wersja spakowana do aplikacji Android.</div>
+      <div style="margin-top:10px">
+        <span class="pill">Laos</span><span class="pill">Algieria kobieca</span><span class="pill">Over 4.5 / 5.5 / 6.5</span><span class="pill">Tryb demo</span>
+      </div>
+    </div>
+
+    <div class="grid">
+      <div class="card">
+        <div class="row two">
+          <div>
+            <label>Klucz API-Football</label>
+            <input id="apiKey" type="password" placeholder="Wklej swój klucz API" />
+          </div>
+          <div>
+            <label>Host API</label>
+            <input id="apiHost" value="v3.football.api-sports.io" />
+          </div>
+        </div>
+        <div class="row two" style="margin-top:10px">
+          <div>
+            <label>Data meczów</label>
+            <input id="matchDate" type="date" />
+          </div>
+          <div>
+            <label>Minimalny wynik punktowy</label>
+            <input id="minScore" type="number" value="8" min="1" max="20" />
+          </div>
+        </div>
+        <div style="margin-top:10px">
+          <label>Leagues (JSON)</label>
+          <textarea id="leagueConfig">[
+  {"country":"Laos","league":"Lao League","season":2025},
+  {"country":"Algeria","league":"Women","season":2025}
+]</textarea>
+        </div>
+        <div class="actions" style="margin-top:12px">
+          <button id="saveBtn">Zapisz ustawienia</button>
+          <button class="secondary" id="demoBtn">Uruchom demo</button>
+          <button class="ghost" id="scanBtn">Skanuj mecze</button>
+        </div>
+        <div class="footer" style="margin-top:12px">
+          Uwaga: klucz API zapisuje się lokalnie w telefonie. To prywatna wersja dla Ciebie. Jeśli API odrzuci część żądań albo nie odda ligi, użyj trybu demo lub popraw nazwę ligi w JSON.
+        </div>
+      </div>
+
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;gap:10px;align-items:center">
+          <strong>Status</strong>
+          <span id="status" class="small">Gotowy</span>
+        </div>
+        <div id="log" class="small" style="margin-top:8px;line-height:1.5"></div>
+      </div>
+
+      <div class="card">
+        <strong>Wyniki</strong>
+        <div id="results" style="margin-top:12px"></div>
+      </div>
+    </div>
+  </div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const today = new Date().toISOString().slice(0,10);
+$("matchDate").value = localStorage.getItem("ob_matchDate") || today;
+$("apiKey").value = localStorage.getItem("ob_apiKey") || "";
+$("apiHost").value = localStorage.getItem("ob_apiHost") || "v3.football.api-sports.io";
+$("leagueConfig").value = localStorage.getItem("ob_leagueConfig") || $("leagueConfig").value;
+$("minScore").value = localStorage.getItem("ob_minScore") || "8";
+
+function setStatus(msg){ $("status").textContent = msg; }
+function log(msg){ $("log").innerHTML = msg; }
+function escapeHtml(s){ return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+function saveSettings(){
+  localStorage.setItem("ob_apiKey", $("apiKey").value.trim());
+  localStorage.setItem("ob_apiHost", $("apiHost").value.trim());
+  localStorage.setItem("ob_matchDate", $("matchDate").value);
+  localStorage.setItem("ob_leagueConfig", $("leagueConfig").value);
+  localStorage.setItem("ob_minScore", $("minScore").value);
+  setStatus("Zapisano");
+  log("Ustawienia zapisane lokalnie w telefonie.");
+}
+
+function renderMatches(matches){
+  const root = $("results");
+  root.innerHTML = "";
+  if(!matches.length){
+    root.innerHTML = '<div class="small">Brak meczów spełniających filtr.</div>';
+    return;
+  }
+  for(const m of matches){
+    const scoreClass = m.score >= 12 ? "green" : (m.score >= 9 ? "orange" : "red");
+    const el = document.createElement("div");
+    el.className = "match";
+    el.innerHTML = `
+      <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start">
+        <div>
+          <div style="font-weight:800;font-size:18px">${escapeHtml(m.home)} vs ${escapeHtml(m.away)}</div>
+          <div class="meta">${escapeHtml(m.league)} • ${escapeHtml(m.country)} • ${escapeHtml(m.date)}</div>
+        </div>
+        <div class="tag ${scoreClass}">Score ${m.score}</div>
+      </div>
+      <div style="margin-top:10px" class="meta">
+        Sugerowane: <strong>${escapeHtml(m.suggested)}</strong><br/>
+        Śr. goli dom: <strong>${m.avgHome.toFixed(2)}</strong> • wyjazd: <strong>${m.avgAway.toFixed(2)}</strong><br/>
+        Over 3.5 ostatnie 5: <strong>${m.over35Home}/5</strong> + <strong>${m.over35Away}/5</strong><br/>
+        Powód: ${escapeHtml(m.reason)}
+      </div>
+    `;
+    root.appendChild(el);
+  }
+}
+
+function demoData(){
+  const sample = [
+    {country:"Laos",league:"Lao League",date:$("matchDate").value,home:"Young Elephants",away:"Savannakhet",avgHome:4.6,avgAway:5.4,over35Home:4,over35Away:5,score:13,suggested:"Over 5.5 / obserwuj 6.5 live",reason:"Obie strony bardzo overowe, wysoka średnia goli i słaba obrona gości."},
+    {country:"Algeria",league:"Women",date:$("matchDate").value,home:"CF Akbou Women",away:"ASE Alger Centre Women",avgHome:3.8,avgAway:4.2,over35Home:3,over35Away:4,score:9,suggested:"Over 4.5 / ewentualnie 5.5",reason:"Profil pod over, ale mniej agresywny niż Laos."}
+  ];
+  renderMatches(sample);
+  setStatus("Tryb demo");
+  log("Załadowano przykładowe wyniki. Po wklejeniu klucza API użyj „Skanuj mecze”.");
+}
+
+async function apiFetch(path, params={}){
+  const key = $("apiKey").value.trim();
+  const host = $("apiHost").value.trim();
+  const url = new URL(`https://${host}${path}`);
+  Object.entries(params).forEach(([k,v]) => url.searchParams.set(k,v));
+  const res = await fetch(url.toString(), { headers: { "x-apisports-key": key } });
+  if(!res.ok) throw new Error(`Błąd API: ${res.status}`);
+  return res.json();
+}
+
+function parseLeagueConfig(){
+  const parsed = JSON.parse($("leagueConfig").value);
+  if(!Array.isArray(parsed)) throw new Error("Leagues musi być listą JSON.");
+  return parsed;
+}
+
+function calcScore(stats){
+  let pts = 0;
+  if(stats.avgHome >= 4.5) pts += 3;
+  if(stats.avgAway >= 4.5) pts += 3;
+  if(stats.avgHome >= 3.8) pts += 1;
+  if(stats.avgAway >= 3.8) pts += 1;
+  if(stats.over35Home >= 3) pts += 2;
+  if(stats.over35Away >= 3) pts += 2;
+  if(stats.avgConcededHome >= 1.8) pts += 1;
+  if(stats.avgConcededAway >= 1.8) pts += 1;
+  return pts;
+}
+
+function suggestedLine(score){
+  if(score >= 12) return "Over 5.5 / obserwuj 6.5 live";
+  if(score >= 10) return "Over 5.5";
+  if(score >= 8) return "Over 4.5 lub 5.5";
+  return "Over 3.5 / obserwacja";
+}
+
+async function scanMatches(){
+  const minScore = Number($("minScore").value || "8");
+  const date = $("matchDate").value;
+  const leagues = parseLeagueConfig();
+  if(!$("apiKey").value.trim()) throw new Error("Wklej klucz API albo użyj trybu demo.");
+
+  setStatus("Skanuję...");
+  log("Pobieram ligi, mecze i formę drużyn.");
+
+  const all = [];
+  for(const conf of leagues){
+    const lg = await apiFetch("/leagues", { search: conf.league });
+    const candidates = (lg.response || []).filter(x => {
+      const c = (x.country?.name || "").toLowerCase();
+      const l = (x.league?.name || "").toLowerCase();
+      return c.includes((conf.country || "").toLowerCase()) && l.includes((conf.league || "").toLowerCase());
+    });
+    if(!candidates.length) continue;
+
+    const picked = candidates[0];
+    const leagueId = picked.league.id;
+    const season = conf.season || new Date().getFullYear();
+    const fx = await apiFetch("/fixtures", { league: leagueId, season: season, date: date });
+
+    for(const item of (fx.response || [])){
+      const homeId = item.teams?.home?.id;
+      const awayId = item.teams?.away?.id;
+      const home = item.teams?.home?.name || "Home";
+      const away = item.teams?.away?.name || "Away";
+
+      const [homeRecent, awayRecent] = await Promise.all([
+        apiFetch("/fixtures", { team: homeId, last: 5 }),
+        apiFetch("/fixtures", { team: awayId, last: 5 })
+      ]);
+
+      function summarize(arr, teamId){
+        let totalGoals = 0, goalsAgainst = 0, over35 = 0, count = 0;
+        for(const m of (arr.response || [])){
+          const hg = Number(m.goals?.home ?? 0);
+          const ag = Number(m.goals?.away ?? 0);
+          const tg = hg + ag;
+          totalGoals += tg;
+          count += 1;
+          if(tg > 3.5) over35 += 1;
+          const isHome = m.teams?.home?.id === teamId;
+          goalsAgainst += isHome ? ag : hg;
+        }
+        return {avgGoals: count ? totalGoals / count : 0, avgConceded: count ? goalsAgainst / count : 0, over35};
+      }
+
+      const hs = summarize(homeRecent, homeId);
+      const as = summarize(awayRecent, awayId);
+      const stats = {
+        avgHome: hs.avgGoals, avgAway: as.avgGoals, over35Home: hs.over35, over35Away: as.over35,
+        avgConcededHome: hs.avgConceded, avgConcededAway: as.avgConceded
+      };
+      const score = calcScore(stats);
+
+      if(score >= minScore){
+        all.push({
+          country: picked.country?.name || conf.country,
+          league: picked.league?.name || conf.league,
+          date: item.fixture?.date?.slice(0,10) || date,
+          home, away,
+          avgHome: stats.avgHome, avgAway: stats.avgAway, over35Home: stats.over35Home, over35Away: stats.over35Away,
+          score, suggested: suggestedLine(score),
+          reason: score >= 12 ? "Bardzo mocny profil overowy po obu stronach." : score >= 10 ? "Dobry kandydat pod wysoki over." : "Kandydat do obserwacji lub gry live."
+        });
+      }
+    }
+  }
+
+  all.sort((a,b) => b.score - a.score || (b.avgHome+b.avgAway) - (a.avgHome+a.avgAway));
+  renderMatches(all);
+  setStatus(`Gotowe: ${all.length} meczów`);
+  log(`Zakończono skan dla daty ${date}. Pokazuję mecze od score ${minScore}.`);
+}
+
+$("saveBtn").addEventListener("click", saveSettings);
+$("demoBtn").addEventListener("click", demoData);
+$("scanBtn").addEventListener("click", async () => {
+  try { await scanMatches(); }
+  catch(err){
+    setStatus("Błąd");
+    log(err.message + "<br><br>Jeśli API oddaje mało danych, zmień ligę lub sezon w JSON.");
+  }
+});
+
+demoData();
+</script>
+</body>
+</html>
